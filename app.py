@@ -5,6 +5,7 @@ import tkinter as tk
 from tkinter import messagebox, ttk
 
 DATA_FILE = "expenses.json"
+VALID_CATEGORIES = ["Еда", "Транспорт", "Развлечения", "Одежда", "Другое"]
 
 
 class ExpenseTracker(tk.Tk):
@@ -12,14 +13,14 @@ class ExpenseTracker(tk.Tk):
     def __init__(self):
         super().__init__()
         self.title("Трекер расходов")
-        self.geometry("750px550")
+        self.geometry("750x550")
         self.expenses = []
         self.load_data()
         self.init_ui()
         self.update_table(self.expenses)
 
     def init_ui(self):
-        # --- Блок ввода (Изменено на ttk.LabelFrame) ---
+        # --- Блок ввода ---
         input_frame = ttk.LabelFrame(self, text="Добавить новый расход", padding=10)
         input_frame.pack(fill="x", padx=10, pady=5)
 
@@ -29,7 +30,7 @@ class ExpenseTracker(tk.Tk):
 
         tk.Label(input_frame, text="Категория:").grid(row=0, column=2, sticky="w")
         self.category_combobox = ttk.Combobox(
-            input_frame, values=["Еда", "Транспорт", "Развлечения", "Одежда", "Другое"]
+            input_frame, values=VALID_CATEGORIES, state="readonly"
         )
         self.category_combobox.grid(row=0, column=3, padx=5, pady=2)
         self.category_combobox.current(0)
@@ -46,14 +47,13 @@ class ExpenseTracker(tk.Tk):
         )
         add_btn.grid(row=0, column=6, padx=10)
 
-        # --- Блок фильтров (Изменено на ttk.LabelFrame) ---
+        # --- Блок фильтров ---
         filter_frame = ttk.LabelFrame(self, text="Фильтрация и анализ", padding=10)
         filter_frame.pack(fill="x", padx=10, pady=5)
 
         tk.Label(filter_frame, text="Категория:").grid(row=0, column=0, sticky="w")
         self.filter_cat = ttk.Combobox(
-            filter_frame,
-            values=["Все", "Еда", "Транспорт", "Развлечения", "Одежда", "Другое"],
+            filter_frame, values=["Все"] + VALID_CATEGORIES, state="readonly"
         )
         self.filter_cat.grid(row=0, column=1, padx=5, pady=2)
         self.filter_cat.current(0)
@@ -75,7 +75,7 @@ class ExpenseTracker(tk.Tk):
         reset_btn = tk.Button(action_frame, text="Сбросить", command=self.reset_filter)
         reset_btn.pack(side="left", padx=2)
 
-        # --- Блок вывода (Таблица) ---
+        # --- Блок таблицы ---
         table_frame = tk.Frame(self)
         table_frame.pack(fill="both", expand=True, padx=10, pady=5)
 
@@ -111,34 +111,41 @@ class ExpenseTracker(tk.Tk):
         category = self.category_combobox.get()
         date_str = self.date_entry.get().strip()
 
+        if category not in VALID_CATEGORIES:
+            messagebox.showerror("Ошибка ввода", "Выберите корректную категорию из списка!")
+            return
+
         try:
             amount = float(amount_str)
             if amount <= 0:
                 raise ValueError
         except ValueError:
-            messagebox.showerror(
-                "Ошибка ввода", "Сумма должна быть положительным числом!"
-            )
+            messagebox.showerror("Ошибка ввода", "Сумма должна быть положительным числом!")
             return
 
         if not self.validate_date(date_str):
-            messagebox.showerror(
-                "Ошибка ввода", "Неверный формат даты! Используйте ГГГГ-ММ-ДД."
-            )
+            messagebox.showerror("Ошибка ввода", "Неверный формат даты! Используйте ГГГГ-ММ-ДД.")
             return
 
         expense = {"amount": amount, "category": category, "date": date_str}
         self.expenses.append(expense)
-        self.save_data()
-
-        self.reset_filter()
-        self.amount_entry.delete(0, tk.END)
-        messagebox.showinfo("Успех", "Расход успешно добавлен!")
+        
+        if self.save_data():
+            self.reset_filter()
+            self.amount_entry.delete(0, tk.END)
+            messagebox.showinfo("Успех", "Расход успешно добавлен!")
+        else:
+            self.expenses.pop() # Откат изменений при ошибке диска
 
     def apply_filter(self):
         cat_filter = self.filter_cat.get()
         start_str = self.filter_start_date.get().strip()
         end_str = self.filter_end_date.get().strip()
+
+        # Защита от пустой строки или некорректного значения фильтра
+        if not cat_filter or cat_filter not in ["Все"] + VALID_CATEGORIES:
+            messagebox.showerror("Ошибка фильтра", "Указана неверная категория для фильтрации!")
+            return
 
         filtered = self.expenses
 
@@ -169,27 +176,46 @@ class ExpenseTracker(tk.Tk):
         for item in self.tree.get_children():
             self.tree.delete(item)
 
-        sorted_data = sorted(data_list, key=lambda x: x["date"], reverse=True)
+        try:
+            sorted_data = sorted(data_list, key=lambda x: x["date"], reverse=True)
+        except Exception:
+            messagebox.showerror("Ошибка", "Не удалось отсортировать данные таблицы.")
+            return
 
         total = 0.0
         for exp in sorted_data:
-            self.tree.insert(
-                "", tk.END, values=(exp["date"], exp["category"], f"{exp['amount']:.2f}")
-            )
+            self.tree.insert("", tk.END, values=(exp["date"], exp["category"], f"{exp['amount']:.2f}"))
             total += exp["amount"]
 
         self.total_label.config(text=f"Итого за период: {total:.2f}")
 
     def save_data(self):
-        with open(DATA_FILE, "w", encoding="utf-8") as f:
-            json.dump(self.expenses, f, ensure_ascii=False, indent=4)
+        temp_file = DATA_FILE + ".tmp"
+        try:
+            # Запись во временный файл
+            with open(temp_file, "w", encoding="utf-8") as f:
+                json.dump(self.expenses, f, ensure_ascii=False, indent=4)
+            # Безопасная замена файла атомарной операцией
+            if os.path.exists(DATA_FILE):
+                os.remove(DATA_FILE)
+            os.rename(temp_file, DATA_FILE)
+            return True
+        except (IOError, OSError) as e:
+            messagebox.showerror("Ошибка диска", f"Не удалось сохранить данные на диск:\n{e}")
+            if os.path.exists(temp_file):
+                os.remove(temp_file)
+            return False
 
     def load_data(self):
         if os.path.exists(DATA_FILE):
             try:
                 with open(DATA_FILE, "r", encoding="utf-8") as f:
                     self.expenses = json.load(f)
-            except json.JSONDecodeError:
+            except (json.JSONDecodeError, IOError, OSError) as e:
+                messagebox.showwarning(
+                    "Предупреждение", 
+                    f"Ошибка чтения файла базы данных. Будет создан новый файл.\nДетали: {e}"
+                )
                 self.expenses = []
 
 
