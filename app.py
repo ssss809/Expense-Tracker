@@ -12,15 +12,15 @@ class ExpenseTracker(tk.Tk):
     def __init__(self):
         super().__init__()
         self.title("Трекер расходов")
-        self.geometry("750x550")
+        self.geometry("750px550")
         self.expenses = []
         self.load_data()
         self.init_ui()
         self.update_table(self.expenses)
 
     def init_ui(self):
-        # --- Блок ввода ---
-        input_frame = tk.LabelFrame(self, text="Добавить новый расход", padding=10)
+        # --- Блок ввода (Изменено на ttk.LabelFrame) ---
+        input_frame = ttk.LabelFrame(self, text="Добавить новый расход", padding=10)
         input_frame.pack(fill="x", padx=10, pady=5)
 
         tk.Label(input_frame, text="Сумма:").grid(row=0, column=0, sticky="w")
@@ -39,17 +39,15 @@ class ExpenseTracker(tk.Tk):
         )
         self.date_entry = tk.Entry(input_frame)
         self.date_entry.grid(row=0, column=5, padx=5, pady=2)
-        self.date_entry.insert(
-            0, datetime.date.today().strftime("%Y-%m-%d")
-        )  # Текущая дата по умолчанию
+        self.date_entry.insert(0, datetime.date.today().strftime("%Y-%m-%d"))
 
         add_btn = tk.Button(
             input_frame, text="Добавить расход", command=self.add_expense
         )
         add_btn.grid(row=0, column=6, padx=10)
 
-        # --- Блок фильтров ---
-        filter_frame = tk.LabelFrame(self, text="Фильтрация и анализ", padding=10)
+        # --- Блок фильтров (Изменено на ttk.LabelFrame) ---
+        filter_frame = ttk.LabelFrame(self, text="Фильтрация и анализ", padding=10)
         filter_frame.pack(fill="x", padx=10, pady=5)
 
         tk.Label(filter_frame, text="Категория:").grid(row=0, column=0, sticky="w")
@@ -101,7 +99,6 @@ class ExpenseTracker(tk.Tk):
         )
         self.total_label.pack(anchor="e", padx=10, pady=10)
 
-    # --- Валидация и Логика ---
     def validate_date(self, date_text):
         try:
             datetime.datetime.strptime(date_text, "%Y-%m-%d")
@@ -114,7 +111,6 @@ class ExpenseTracker(tk.Tk):
         category = self.category_combobox.get()
         date_str = self.date_entry.get().strip()
 
-        # Проверка суммы
         try:
             amount = float(amount_str)
             if amount <= 0:
@@ -125,19 +121,16 @@ class ExpenseTracker(tk.Tk):
             )
             return
 
-        # Проверка даты
         if not self.validate_date(date_str):
             messagebox.showerror(
                 "Ошибка ввода", "Неверный формат даты! Используйте ГГГГ-ММ-ДД."
             )
             return
 
-        # Сохранение записи
         expense = {"amount": amount, "category": category, "date": date_str}
         self.expenses.append(expense)
         self.save_data()
 
-        # Обновление UI
         self.reset_filter()
         self.amount_entry.delete(0, tk.END)
         messagebox.showinfo("Успех", "Расход успешно добавлен!")
@@ -149,11 +142,9 @@ class ExpenseTracker(tk.Tk):
 
         filtered = self.expenses
 
-        # Сортировка по категории
         if cat_filter != "Все":
             filtered = [x for x in filtered if x["category"] == cat_filter]
 
-        # Фильтр дат
         if start_str:
             if not self.validate_date(start_str):
                 messagebox.showerror("Ошибка даты", "Неверный формат начальной даты.")
@@ -175,11 +166,9 @@ class ExpenseTracker(tk.Tk):
         self.update_table(self.expenses)
 
     def update_table(self, data_list):
-        # Очистить таблицу
         for item in self.tree.get_children():
             self.tree.delete(item)
 
-        # Сортировка данных по дате для красивого вывода
         sorted_data = sorted(data_list, key=lambda x: x["date"], reverse=True)
 
         total = 0.0
@@ -191,7 +180,6 @@ class ExpenseTracker(tk.Tk):
 
         self.total_label.config(text=f"Итого за период: {total:.2f}")
 
-    # --- Работа с JSON ---
     def save_data(self):
         with open(DATA_FILE, "w", encoding="utf-8") as f:
             json.dump(self.expenses, f, ensure_ascii=False, indent=4)
