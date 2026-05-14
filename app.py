@@ -1,224 +1,171 @@
-import datetime
 import json
 import os
 import tkinter as tk
 from tkinter import messagebox, ttk
+import requests
 
-DATA_FILE = "expenses.json"
-VALID_CATEGORIES = ["Еда", "Транспорт", "Развлечения", "Одежда", "Другое"]
+FAVORITES_FILE = "favorites.json"
+API_URL = "github.com"
 
-
-class ExpenseTracker(tk.Tk):
-
-    def __init__(self):
-        super().__init__()
-        self.title("Трекер расходов")
-        self.geometry("750x550")
-        self.expenses = []
-        self.load_data()
-        self.init_ui()
-        self.update_table(self.expenses)
-
-    def init_ui(self):
-        # --- Блок ввода ---
-        input_frame = ttk.LabelFrame(self, text="Добавить новый расход", padding=10)
-        input_frame.pack(fill="x", padx=10, pady=5)
-
-        tk.Label(input_frame, text="Сумма:").grid(row=0, column=0, sticky="w")
-        self.amount_entry = tk.Entry(input_frame)
-        self.amount_entry.grid(row=0, column=1, padx=5, pady=2)
-
-        tk.Label(input_frame, text="Категория:").grid(row=0, column=2, sticky="w")
-        self.category_combobox = ttk.Combobox(
-            input_frame, values=VALID_CATEGORIES, state="readonly"
-        )
-        self.category_combobox.grid(row=0, column=3, padx=5, pady=2)
-        self.category_combobox.current(0)
-
-        tk.Label(input_frame, text="Дата (ГГГГ-ММ-ДД):").grid(
-            row=0, column=4, sticky="w"
-        )
-        self.date_entry = tk.Entry(input_frame)
-        self.date_entry.grid(row=0, column=5, padx=5, pady=2)
-        self.date_entry.insert(0, datetime.date.today().strftime("%Y-%m-%d"))
-
-        add_btn = tk.Button(
-            input_frame, text="Добавить расход", command=self.add_expense
-        )
-        add_btn.grid(row=0, column=6, padx=10)
-
-        # --- Блок фильтров ---
-        filter_frame = ttk.LabelFrame(self, text="Фильтрация и анализ", padding=10)
-        filter_frame.pack(fill="x", padx=10, pady=5)
-
-        tk.Label(filter_frame, text="Категория:").grid(row=0, column=0, sticky="w")
-        self.filter_cat = ttk.Combobox(
-            filter_frame, values=["Все"] + VALID_CATEGORIES, state="readonly"
-        )
-        self.filter_cat.grid(row=0, column=1, padx=5, pady=2)
-        self.filter_cat.current(0)
-
-        tk.Label(filter_frame, text="С даты:").grid(row=0, column=2, sticky="w")
-        self.filter_start_date = tk.Entry(filter_frame, width=12)
-        self.filter_start_date.grid(row=0, column=3, padx=5, pady=2)
-
-        tk.Label(filter_frame, text="По дату:").grid(row=0, column=4, sticky="w")
-        self.filter_end_date = tk.Entry(filter_frame, width=12)
-        self.filter_end_date.grid(row=0, column=5, padx=5, pady=2)
-
-        action_frame = tk.Frame(filter_frame)
-        action_frame.grid(row=0, column=6, padx=10, columnspan=2)
-
-        filter_btn = tk.Button(action_frame, text="Применить", command=self.apply_filter)
-        filter_btn.pack(side="left", padx=2)
-
-        reset_btn = tk.Button(action_frame, text="Сбросить", command=self.reset_filter)
-        reset_btn.pack(side="left", padx=2)
-
-        # --- Блок таблицы ---
-        table_frame = tk.Frame(self)
-        table_frame.pack(fill="both", expand=True, padx=10, pady=5)
-
-        columns = ("date", "category", "amount")
-        self.tree = ttk.Treeview(table_frame, columns=columns, show="headings")
-        self.tree.heading("date", text="Дата")
-        self.tree.heading("category", text="Категория")
-        self.tree.heading("amount", text="Сумма")
-
-        scrollbar = ttk.Scrollbar(
-            table_frame, orient="vertical", command=self.tree.yview
-        )
-        self.tree.configure(yscrollcommand=scrollbar.set)
-
-        self.tree.pack(side="left", fill="both", expand=True)
-        scrollbar.pack(side="right", fill="y")
-
-        # --- Блок Итогов ---
-        self.total_label = tk.Label(
-            self, text="Итого за период: 0.00", font=("Arial", 12, "bold")
-        )
-        self.total_label.pack(anchor="e", padx=10, pady=10)
-
-    def validate_date(self, date_text):
-        try:
-            datetime.datetime.strptime(date_text, "%Y-%m-%d")
-            return True
-        except ValueError:
-            return False
-
-    def add_expense(self):
-        amount_str = self.amount_entry.get().strip()
-        category = self.category_combobox.get()
-        date_str = self.date_entry.get().strip()
-
-        if category not in VALID_CATEGORIES:
-            messagebox.showerror("Ошибка ввода", "Выберите корректную категорию из списка!")
-            return
-
-        try:
-            amount = float(amount_str)
-            if amount <= 0:
-                raise ValueError
-        except ValueError:
-            messagebox.showerror("Ошибка ввода", "Сумма должна быть положительным числом!")
-            return
-
-        if not self.validate_date(date_str):
-            messagebox.showerror("Ошибка ввода", "Неверный формат даты! Используйте ГГГГ-ММ-ДД.")
-            return
-
-        expense = {"amount": amount, "category": category, "date": date_str}
-        self.expenses.append(expense)
+class GitHubUserFinderApp:
+    def __init__(self, root):
+        self.root = root
+        self.root.title("GitHub User Finder")
+        self.root.geometry("550x600")
+        self.root.minsize(450, 500)
         
-        if self.save_data():
-            self.reset_filter()
-            self.amount_entry.delete(0, tk.END)
-            messagebox.showinfo("Успех", "Расход успешно добавлен!")
+        self.favorites = self.load_favorites()
+        self.current_user_data = None
+        
+        self._init_styles()
+        self._create_widgets()
+
+    def _init_styles(self):
+        self.style = ttk.Style()
+        self.style.theme_use("clam")
+        self.style.configure("TNotebook.Tab", font=("Segoe UI", 10), padding=[15, 5])
+        self.style.configure("Action.TButton", font=("Segoe UI", 10, "bold"))
+
+    def _create_widgets(self):
+        # Панель поиска
+        search_frame = ttk.LabelFrame(self.root, text=" Поиск профиля GitHub ", padding=10)
+        search_frame.pack(fill=tk.X, padx=15, pady=10)
+        
+        self.search_entry = ttk.Entry(search_frame, font=("Segoe UI", 11))
+        self.search_entry.pack(side=tk.LEFT, expand=True, fill=tk.X, padx=(0, 10))
+        self.search_entry.bind("<Return>", lambda event: self.search_user())
+        
+        search_btn = ttk.Button(search_frame, text="Найти", command=self.search_user, style="Action.TButton")
+        search_btn.pack(side=tk.RIGHT)
+
+        # Вкладки
+        self.notebook = ttk.Notebook(self.root)
+        self.notebook.pack(expand=True, fill=tk.BOTH, padx=15, pady=5)
+
+        self._build_results_tab()
+        self._build_favorites_tab()
+
+    def _build_results_tab(self):
+        tab = ttk.Frame(self.notebook, padding=15)
+        self.notebook.add(tab, text="Результаты поиска")
+        
+        self.info_text = tk.Text(tab, font=("Consolas", 11), bg="#f8f9fa", state=tk.DISABLED, relief=tk.FLAT)
+        self.info_text.pack(expand=True, fill=tk.BOTH, pady=(0, 10))
+        
+        self.add_fav_btn = ttk.Button(tab, text="⭐ Добавить в избранное", state=tk.DISABLED, command=self.add_to_favorites)
+        self.add_fav_btn.pack(fill=tk.X)
+
+    def _build_favorites_tab(self):
+        tab = ttk.Frame(self.notebook, padding=15)
+        self.notebook.add(tab, text="Избранные пользователи")
+        
+        # Фильтрация
+        filter_frame = ttk.Frame(tab)
+        filter_frame.pack(fill=tk.X, pady=(0, 10))
+        ttk.Label(filter_frame, text="Фильтр: ", font=("Segoe UI", 10)).pack(side=tk.LEFT)
+        
+        self.filter_entry = ttk.Entry(filter_frame, font=("Segoe UI", 10))
+        self.filter_entry.pack(side=tk.LEFT, expand=True, fill=tk.X, padx=5)
+        self.filter_entry.bind("<KeyRelease>", lambda event: self.update_favorites_listbox())
+
+        # Список
+        self.fav_listbox = tk.Listbox(tab, font=("Segoe UI", 11), selectmode=tk.SINGLE, highlightthickness=0)
+        self.fav_listbox.pack(expand=True, fill=tk.BOTH, pady=(0, 10))
+        
+        # Кнопка удаления
+        delete_btn = ttk.Button(tab, text="❌ Удалить из избранного", command=self.delete_from_favorites)
+        delete_btn.pack(fill=tk.X)
+        
+        self.update_favorites_listbox()
+
+    def search_user(self):
+        username = self.search_entry.get().strip()
+        
+        if not username:
+            messagebox.showwarning("Валидация", "Поле поиска не должно быть пустым.")
+            return
+
+        try:
+            response = requests.get(f"{API_URL}{username}", timeout=5)
+            if response.status_code == 200:
+                self.current_user_data = response.json()
+                self._display_user_info()
+            elif response.status_code == 404:
+                self._clear_info_text("Ошибка: Пользователь не найден.")
+                self.add_fav_btn.config(state=tk.DISABLED)
+            else:
+                self._clear_info_text(f"Ошибка API (Код: {response.status_code})")
+        except requests.exceptions.RequestException:
+            messagebox.showerror("Сеть", "Не удалось подключиться к GitHub API. Проверьте интернет.")
+
+    def _display_user_info(self):
+        data = self.current_user_data
+        formatted_info = (
+            f" Логин:       {data.get('login')}\n"
+            f" Имя:         {data.get('name') or 'Не указано'}\n"
+            f" ID:          {data.get('id')}\n"
+            f" Компания:    {data.get('company') or 'Нет'}\n"
+            f" Репозитории: {data.get('public_repos')}\n"
+            f" Подписчики:  {data.get('followers')}\n"
+            f" Ссылка:      {data.get('html_url')}"
+        )
+        self.info_text.config(state=tk.NORMAL)
+        self.info_text.delete("1.0", tk.END)
+        self.info_text.insert("1.0", formatted_info)
+        self.info_text.config(state=tk.DISABLED)
+        self.add_fav_btn.config(state=tk.NORMAL)
+
+    def _clear_info_text(self, message):
+        self.info_text.config(state=tk.NORMAL)
+        self.info_text.delete("1.0", tk.END)
+        self.info_text.insert("1.0", message)
+        self.info_text.config(state=tk.DISABLED)
+
+    def add_to_favorites(self):
+        if not self.current_user_data:
+            return
+        
+        login = self.current_user_data["login"]
+        if login not in self.favorites:
+            self.favorites.append(login)
+            self.save_favorites()
+            self.update_favorites_listbox()
+            messagebox.showinfo("Успех", f"Пользователь {login} добавлен в избранное.")
         else:
-            self.expenses.pop() # Откат изменений при ошибке диска
+            messagebox.showinfo("Инфо", "Пользователь уже находится в избранном.")
 
-    def apply_filter(self):
-        cat_filter = self.filter_cat.get()
-        start_str = self.filter_start_date.get().strip()
-        end_str = self.filter_end_date.get().strip()
-
-        # Защита от пустой строки или некорректного значения фильтра
-        if not cat_filter or cat_filter not in ["Все"] + VALID_CATEGORIES:
-            messagebox.showerror("Ошибка фильтра", "Указана неверная категория для фильтрации!")
+    def delete_from_favorites(self):
+        selected_index = self.fav_listbox.curselection()
+        if not selected_index:
+            messagebox.showwarning("Выбор", "Выберите пользователя из списка для удаления.")
             return
+        
+        selected_user = self.fav_listbox.get(selected_index)
+        self.favorites.remove(selected_user)
+        self.save_favorites()
+        self.update_favorites_listbox()
 
-        filtered = self.expenses
-
-        if cat_filter != "Все":
-            filtered = [x for x in filtered if x["category"] == cat_filter]
-
-        if start_str:
-            if not self.validate_date(start_str):
-                messagebox.showerror("Ошибка даты", "Неверный формат начальной даты.")
-                return
-            filtered = [x for x in filtered if x["date"] >= start_str]
-
-        if end_str:
-            if not self.validate_date(end_str):
-                messagebox.showerror("Ошибка даты", "Неверный формат конечной даты.")
-                return
-            filtered = [x for x in filtered if x["date"] <= end_str]
-
-        self.update_table(filtered)
-
-    def reset_filter(self):
-        self.filter_cat.current(0)
-        self.filter_start_date.delete(0, tk.END)
-        self.filter_end_date.delete(0, tk.END)
-        self.update_table(self.expenses)
-
-    def update_table(self, data_list):
-        for item in self.tree.get_children():
-            self.tree.delete(item)
-
-        try:
-            sorted_data = sorted(data_list, key=lambda x: x["date"], reverse=True)
-        except Exception:
-            messagebox.showerror("Ошибка", "Не удалось отсортировать данные таблицы.")
-            return
-
-        total = 0.0
-        for exp in sorted_data:
-            self.tree.insert("", tk.END, values=(exp["date"], exp["category"], f"{exp['amount']:.2f}"))
-            total += exp["amount"]
-
-        self.total_label.config(text=f"Итого за период: {total:.2f}")
-
-    def save_data(self):
-        temp_file = DATA_FILE + ".tmp"
-        try:
-            # Запись во временный файл
-            with open(temp_file, "w", encoding="utf-8") as f:
-                json.dump(self.expenses, f, ensure_ascii=False, indent=4)
-            # Безопасная замена файла атомарной операцией
-            if os.path.exists(DATA_FILE):
-                os.remove(DATA_FILE)
-            os.rename(temp_file, DATA_FILE)
-            return True
-        except (IOError, OSError) as e:
-            messagebox.showerror("Ошибка диска", f"Не удалось сохранить данные на диск:\n{e}")
-            if os.path.exists(temp_file):
-                os.remove(temp_file)
-            return False
-
-    def load_data(self):
-        if os.path.exists(DATA_FILE):
+    def load_favorites(self):
+        if os.path.exists(FAVORITES_FILE):
             try:
-                with open(DATA_FILE, "r", encoding="utf-8") as f:
-                    self.expenses = json.load(f)
-            except (json.JSONDecodeError, IOError, OSError) as e:
-                messagebox.showwarning(
-                    "Предупреждение", 
-                    f"Ошибка чтения файла базы данных. Будет создан новый файл.\nДетали: {e}"
-                )
-                self.expenses = []
+                with open(FAVORITES_FILE, "r", encoding="utf-8") as f:
+                    return json.load(f)
+            except json.JSONDecodeError:
+                return []
+        return []
 
+    def save_favorites(self):
+        with open(FAVORITES_FILE, "w", encoding="utf-8") as f:
+            json.dump(self.favorites, f, ensure_ascii=False, indent=4)
+
+    def update_favorites_listbox(self):
+        self.fav_listbox.delete(0, tk.END)
+        filter_text = self.filter_entry.get().lower().strip()
+        for user in self.favorites:
+            if filter_text in user.lower():
+                self.fav_listbox.insert(tk.END, user)
 
 if __name__ == "__main__":
-    app = ExpenseTracker()
-    app.mainloop()
+    root = tk.Tk()
+    app = GitHubUserFinderApp(root)
+    root.mainloop()
